@@ -1,0 +1,14 @@
+{
+  "name": "rivox-lead-engine",
+  "version": "0.1.0",
+  "description": "RIVOX lead generation engine - discovers, enriches, and scores public business leads.",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "leads": "node src/index.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "minimist": "^1.2.8"
+  }
+}
