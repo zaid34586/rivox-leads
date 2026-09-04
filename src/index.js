@@ -2,6 +2,8 @@ import "dotenv/config";
 import minimist from "minimist";
 import { searchSerpApiLocal } from "./discovery/serpapi.js";
 import { normalizeSerpApiLead } from "./mapping/normalizeLead.js";
+import { inferCountryParams } from "./mapping/inferCountryParams.js";
+import { resolvePendingRedirects } from "./enrichment/resolveRedirect.js";
 import { logInfo, logWarn, logError } from "./utils/logger.js";
 
 const args = minimist(process.argv.slice(2), {
@@ -47,6 +49,12 @@ async function main() {
 
   for (const location of locations) {
     logInfo(`\n--- Searching "${args.query}" in "${location}" ---`);
+    const { gl, google_domain, _unmapped } = inferCountryParams(location);
+    if (_unmapped) {
+      logWarn(`  No country mapping found for "${location}" — defaulting to gl=us. Add it to inferCountryParams.js if this region matters.`);
+    } else {
+      logInfo(`  Using gl=${gl}, google_domain=${google_domain}`);
+    }
     try {
       const raw = await searchSerpApiLocal({
         query: args.query,
@@ -54,6 +62,8 @@ async function main() {
         limit,
         apiKey,
         debug: args.debug,
+        gl,
+        googleDomain: google_domain,
       });
       logInfo(`  -> ${raw.length} raw result(s) returned`);
       const normalized = raw.map((r) => normalizeSerpApiLead(r, location));
@@ -62,6 +72,13 @@ async function main() {
       failedLocations.push({ location, message: err.message });
       logError(`  -> Skipped "${location}" due to error above.`);
     }
+  }
+
+  const pendingCount = allRawResults.filter((r) => r._pending_redirect).length;
+  if (pendingCount > 0) {
+    logInfo(`\nResolving ${pendingCount} Google redirect link(s) to find real websites...`);
+    const { resolved, failed } = await resolvePendingRedirects(allRawResults);
+    logInfo(`  -> resolved: ${resolved}, still unresolved: ${failed}`);
   }
 
   console.log("\n================ SUMMARY ================");

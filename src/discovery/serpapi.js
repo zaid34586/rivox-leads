@@ -24,7 +24,7 @@ const SERPAPI_BASE_URL = "https://serpapi.com/search.json";
  * @param {boolean} opts.debug - if true, dumps the raw response for the first result
  * @returns {Promise<Array<Object>>} raw local_results entries (unmapped, as SerpApi returns them)
  */
-export async function searchSerpApiLocal({ query, location, limit, apiKey, debug }) {
+export async function searchSerpApiLocal({ query, location, limit, apiKey, debug, gl, googleDomain }) {
   if (!apiKey) {
     throw new Error(
       "SERPAPI_KEY is missing. Copy .env.example to .env and add your real key."
@@ -37,6 +37,8 @@ export async function searchSerpApiLocal({ query, location, limit, apiKey, debug
     location,
     api_key: apiKey,
   });
+  if (gl) params.set("gl", gl);
+  if (googleDomain) params.set("google_domain", googleDomain);
 
   const url = `${SERPAPI_BASE_URL}?${params.toString()}`;
 

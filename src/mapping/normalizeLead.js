@@ -31,6 +31,15 @@ const TRACKING_PARAMS = [
  * than the business's own site (per pitfall: "don't treat a Google redirect
  * link as a real website — filter those out at the source, not after").
  */
+export function isGoogleHost(rawUrl) {
+  try {
+    const host = new URL(rawUrl).hostname;
+    return host.includes("google.com") || host.includes("google.co");
+  } catch {
+    return false;
+  }
+}
+
 export function cleanWebsiteUrl(rawUrl) {
   if (!rawUrl) return null;
 
@@ -41,9 +50,7 @@ export function cleanWebsiteUrl(rawUrl) {
     return null;
   }
 
-  const isGoogleRedirect =
-    url.hostname.includes("google.com") || url.hostname.includes("google.");
-  if (isGoogleRedirect) return null;
+  if (isGoogleHost(rawUrl)) return null;
 
   TRACKING_PARAMS.forEach((p) => url.searchParams.delete(p));
 
@@ -60,13 +67,19 @@ export function cleanWebsiteUrl(rawUrl) {
  * @returns {Object} normalized lead
  */
 export function normalizeSerpApiLead(raw, sourceLocation) {
+  const rawWebsite = raw.links?.website || null;
+  const isRedirect = rawWebsite ? isGoogleHost(rawWebsite) : false;
+
   return {
     name: raw.title || null,
     category: raw.type || null,
     rating: typeof raw.rating === "number" ? raw.rating : null,
     review_count: typeof raw.reviews === "number" ? raw.reviews : null,
     phone: raw.phone || raw.links?.phone?.replace(/^tel:/, "") || null,
-    website: cleanWebsiteUrl(raw.links?.website),
+    website: isRedirect ? null : cleanWebsiteUrl(rawWebsite),
+    // If SerpApi gave us a google.com/goto redirect instead of a direct URL,
+    // stash it here so an enrichment pass can resolve it to the real site.
+    _pending_redirect: isRedirect ? rawWebsite : null,
     address: raw.address || null,
     place_id: raw.place_id || null,
     gps: raw.gps_coordinates || null,
