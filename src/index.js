@@ -4,6 +4,7 @@ import { searchSerpApiLocal } from "./discovery/serpapi.js";
 import { normalizeSerpApiLead } from "./mapping/normalizeLead.js";
 import { inferCountryParams } from "./mapping/inferCountryParams.js";
 import { resolvePendingRedirects } from "./enrichment/resolveRedirect.js";
+import { scoreLeads } from "./scoring/scoreLead.js";
 import { logInfo, logWarn, logError } from "./utils/logger.js";
 
 const args = minimist(process.argv.slice(2), {
@@ -81,6 +82,8 @@ async function main() {
     logInfo(`  -> resolved: ${resolved}, still unresolved: ${failed}`);
   }
 
+  const tierCounts = scoreLeads(allRawResults);
+
   console.log("\n================ SUMMARY ================");
   logInfo(`Total raw results collected: ${allRawResults.length}`);
   if (failedLocations.length > 0) {
@@ -92,13 +95,18 @@ async function main() {
   if (allRawResults.length > 0) {
     const pct = Math.round((withWebsite / allRawResults.length) * 100);
     logInfo(`Leads with a working website link: ${withWebsite}/${allRawResults.length} (${pct}%)`);
-    console.log("\nSample of collected leads:");
-    allRawResults.slice(0, 5).forEach((r, i) => {
-      console.log(
-        `  ${i + 1}. ${r.name || "(no name)"} | website: ${
-          r.website || "(none — Google redirect or missing)"
-        } | rating: ${r.rating ?? "n/a"} (${r.review_count ?? 0} reviews) | ${r.source_location}`
-      );
+
+    logInfo(
+      `\nScoring breakdown: Perfect ${tierCounts.perfect} | Maybe ${tierCounts.maybe} | Skip ${tierCounts.skip}`
+    );
+
+    ["Perfect", "Maybe", "Skip"].forEach((tier) => {
+      const sample = allRawResults.filter((r) => r.tier === tier).slice(0, 5);
+      if (sample.length === 0) return;
+      console.log(`\n  -- ${tier} (showing up to 5) --`);
+      sample.forEach((r) => {
+        console.log(`     ${r.name} | category: "${r.category}" | ${r.score_reason}`);
+      });
     });
   }
 
