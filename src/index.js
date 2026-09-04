@@ -1,6 +1,7 @@
 import "dotenv/config";
 import minimist from "minimist";
 import { searchSerpApiLocal } from "./discovery/serpapi.js";
+import { normalizeSerpApiLead } from "./mapping/normalizeLead.js";
 import { logInfo, logWarn, logError } from "./utils/logger.js";
 
 const args = minimist(process.argv.slice(2), {
@@ -55,7 +56,8 @@ async function main() {
         debug: args.debug,
       });
       logInfo(`  -> ${raw.length} raw result(s) returned`);
-      allRawResults.push(...raw.map((r) => ({ ...r, _source_location: location })));
+      const normalized = raw.map((r) => normalizeSerpApiLead(r, location));
+      allRawResults.push(...normalized);
     } catch (err) {
       failedLocations.push({ location, message: err.message });
       logError(`  -> Skipped "${location}" due to error above.`);
@@ -69,13 +71,16 @@ async function main() {
     failedLocations.forEach((f) => console.log(`   - ${f.location}: ${f.message}`));
   }
 
+  const withWebsite = allRawResults.filter((r) => r.website).length;
   if (allRawResults.length > 0) {
-    console.log("\nSample of collected results (name + whatever website field SerpApi gave us):");
+    const pct = Math.round((withWebsite / allRawResults.length) * 100);
+    logInfo(`Leads with a working website link: ${withWebsite}/${allRawResults.length} (${pct}%)`);
+    console.log("\nSample of collected leads:");
     allRawResults.slice(0, 5).forEach((r, i) => {
       console.log(
-        `  ${i + 1}. ${r.title || "(no title field found)"} | website: ${
-          r.website || "(no website field found — check --debug output)"
-        } | location: ${r._source_location}`
+        `  ${i + 1}. ${r.name || "(no name)"} | website: ${
+          r.website || "(none — Google redirect or missing)"
+        } | rating: ${r.rating ?? "n/a"} (${r.review_count ?? 0} reviews) | ${r.source_location}`
       );
     });
   }
