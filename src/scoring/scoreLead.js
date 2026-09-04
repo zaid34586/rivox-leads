@@ -16,6 +16,7 @@ const STRONG_MATCH = [
   "digital marketing",
   "digital agency",
   "creative agency",
+  "design agency",
   "advertising agency",
   "branding agency",
   "web design agency",
@@ -29,6 +30,7 @@ const STRONG_MATCH = [
   "recruitment agency",
   "staffing agency",
   "employment agency",
+  "recruiter",
 ];
 
 // Looser/generic terms -> could go either way, needs a human glance -> Maybe.

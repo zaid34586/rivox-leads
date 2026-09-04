@@ -66,7 +66,7 @@ export function cleanWebsiteUrl(rawUrl) {
  * @param {string} sourceLocation - the location string this result came from
  * @returns {Object} normalized lead
  */
-export function normalizeSerpApiLead(raw, sourceLocation) {
+export function normalizeSerpApiLead(raw, sourceLocation, sourceQuery) {
   const rawWebsite = raw.links?.website || null;
   const isRedirect = rawWebsite ? isGoogleHost(rawWebsite) : false;
 
@@ -77,14 +77,12 @@ export function normalizeSerpApiLead(raw, sourceLocation) {
     review_count: typeof raw.reviews === "number" ? raw.reviews : null,
     phone: raw.phone || raw.links?.phone?.replace(/^tel:/, "") || null,
     website: isRedirect ? null : cleanWebsiteUrl(rawWebsite),
-    // If SerpApi gave us a google.com/goto redirect instead of a direct URL,
-    // stash it here so an enrichment pass can resolve it to the real site.
     _pending_redirect: isRedirect ? rawWebsite : null,
     address: raw.address || null,
     place_id: raw.place_id || null,
     gps: raw.gps_coordinates || null,
     source_location: sourceLocation,
-    // kept for scoring/enrichment steps later in the roadmap
+    source_query: sourceQuery || null,
     _raw_type: raw.type || null,
   };
 }
