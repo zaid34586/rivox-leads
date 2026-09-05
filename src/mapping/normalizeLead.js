@@ -66,6 +66,27 @@ export function cleanWebsiteUrl(rawUrl) {
  * @param {string} sourceLocation - the location string this result came from
  * @returns {Object} normalized lead
  */
+export function normalizeGooglePlacesLead(raw, sourceLocation, sourceQuery) {
+  const websiteUri = raw.websiteUri || null;
+  return {
+    name: raw.displayName?.text || null,
+    category: raw.primaryTypeDisplayName?.text || null,
+    rating: typeof raw.rating === "number" ? raw.rating : null,
+    review_count: typeof raw.userRatingCount === "number" ? raw.userRatingCount : null,
+    phone: raw.internationalPhoneNumber || null,
+    // Google Places API returns the direct site — no redirect wrapper like the scraped local pack.
+    website: cleanWebsiteUrl(websiteUri),
+    _pending_redirect: null,
+    address: raw.formattedAddress || null,
+    place_id: raw.id || null,
+    gps: raw.location ? { latitude: raw.location.latitude, longitude: raw.location.longitude } : null,
+    source_location: sourceLocation,
+    source_query: sourceQuery || null,
+    _raw_type: raw.primaryTypeDisplayName?.text || null,
+    _source: "google_places",
+  };
+}
+
 export function normalizeSerpApiLead(raw, sourceLocation, sourceQuery) {
   const rawWebsite = raw.links?.website || null;
   const isRedirect = rawWebsite ? isGoogleHost(rawWebsite) : false;
@@ -84,5 +105,6 @@ export function normalizeSerpApiLead(raw, sourceLocation, sourceQuery) {
     source_location: sourceLocation,
     source_query: sourceQuery || null,
     _raw_type: raw.type || null,
+    _source: "serpapi",
   };
 }

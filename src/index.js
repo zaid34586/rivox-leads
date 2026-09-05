@@ -3,7 +3,8 @@ import { writeFileSync, mkdirSync } from "fs";
 import path from "path";
 import minimist from "minimist";
 import { searchSerpApiLocal } from "./discovery/serpapi.js";
-import { normalizeSerpApiLead } from "./mapping/normalizeLead.js";
+import { searchGooglePlaces } from "./discovery/googlePlaces.js";
+import { normalizeSerpApiLead, normalizeGooglePlacesLead } from "./mapping/normalizeLead.js";
 import { inferCountryParams } from "./mapping/inferCountryParams.js";
 import { cleanCompanyName } from "./mapping/cleanCompanyName.js";
 import { resolvePendingRedirects } from "./enrichment/resolveRedirect.js";
@@ -78,8 +79,28 @@ async function main() {
         const normalized = raw.map((r) => normalizeSerpApiLead(r, location, query));
         allRawResults.push(...normalized);
       } catch (err) {
-        failedCombos.push({ query, location, message: err.message });
-        logError(`  -> Skipped "${query}" in "${location}" due to error above.`);
+        const placesKey = process.env.GOOGLE_PLACES_API_KEY;
+        if (placesKey) {
+          logWarn(`  SerpApi failed ("${err.message}") — falling back to Google Places for this combo...`);
+          try {
+            const rawPlaces = await searchGooglePlaces({
+              query,
+              location,
+              limit,
+              apiKey: placesKey,
+              debug: args.debug,
+            });
+            logInfo(`  -> (fallback) ${rawPlaces.length} raw result(s) returned from Google Places`);
+            const normalizedPlaces = rawPlaces.map((r) => normalizeGooglePlacesLead(r, location, query));
+            allRawResults.push(...normalizedPlaces);
+          } catch (fallbackErr) {
+            failedCombos.push({ query, location, message: `SerpApi: ${err.message} | Places fallback: ${fallbackErr.message}` });
+            logError(`  -> Both sources failed for "${query}" in "${location}".`);
+          }
+        } else {
+          failedCombos.push({ query, location, message: err.message });
+          logError(`  -> Skipped "${query}" in "${location}" due to error above. (Add GOOGLE_PLACES_API_KEY to .env to enable automatic fallback.)`);
+        }
       }
     }
   }
