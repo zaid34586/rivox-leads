@@ -5,14 +5,16 @@ import minimist from "minimist";
 import { searchSerpApiLocal } from "./discovery/serpapi.js";
 import { normalizeSerpApiLead } from "./mapping/normalizeLead.js";
 import { inferCountryParams } from "./mapping/inferCountryParams.js";
+import { cleanCompanyName } from "./mapping/cleanCompanyName.js";
 import { resolvePendingRedirects } from "./enrichment/resolveRedirect.js";
+import { enrichLeads } from "./enrichment/enrichWebsite.js";
 import { scoreLeads } from "./scoring/scoreLead.js";
 import { logInfo, logWarn, logError } from "./utils/logger.js";
 
 const args = minimist(process.argv.slice(2), {
   string: ["query", "locations", "limit", "out"],
-  boolean: ["debug"],
-  default: { limit: "5", debug: false },
+  boolean: ["debug", "enrich"],
+  default: { limit: "5", debug: false, enrich: false },
 });
 
 function printUsageAndExit() {
@@ -26,6 +28,8 @@ Usage:
                 "Austin, Texas, United States;London, England, United Kingdom;Sydney, New South Wales, Australia"
   --limit       Max results PER query+location combo (default 5).
   --debug       Print the raw API response for the first result of each combo.
+  --enrich      Visit each lead's own website to pull a description, public email, and contact page link.
+                Slower (one extra request per lead) — off by default.
   --out         Optional. Path to save all normalized+scored leads as JSON (for later dedupe/merge/export).
 
 Rule of thumb: test small (limit 5, one query, one location) before combining everything into a big run.
@@ -93,6 +97,14 @@ async function main() {
     deduped.push(lead);
   }
 
+  // Clean marketing taglines out of business names (cheap, always runs).
+  // Original stays in raw_name — nothing is lost, just tidied for outreach.
+  for (const lead of deduped) {
+    const { clean_name, raw_name } = cleanCompanyName(lead.name);
+    lead.raw_name = raw_name;
+    lead.name = clean_name;
+  }
+
   const pendingCount = deduped.filter((r) => r._pending_redirect).length;
   if (pendingCount > 0) {
     logInfo(`\nResolving ${pendingCount} Google redirect link(s) to find real websites...`);
@@ -101,6 +113,15 @@ async function main() {
   }
 
   const tierCounts = scoreLeads(deduped);
+
+  if (args.enrich) {
+    const enrichTargets = deduped.filter((l) => l.website);
+    logInfo(`\nEnriching ${enrichTargets.length} lead website(s) (description/email/contact link)...`);
+    const { attempted, gotDescription, gotEmail } = await enrichLeads(deduped);
+    logInfo(
+      `  -> attempted: ${attempted}, got description: ${gotDescription}, got email: ${gotEmail}`
+    );
+  }
 
   console.log("\n================ SUMMARY ================");
   logInfo(`Total raw results collected: ${allRawResults.length}`);
@@ -123,7 +144,8 @@ async function main() {
       if (sample.length === 0) return;
       console.log(`\n  -- ${tier} (showing up to 5) --`);
       sample.forEach((r) => {
-        console.log(`     ${r.name} | category: "${r.category}" | ${r.score_reason}`);
+        const emailPart = args.enrich ? ` | email: ${r.email || "none found"}` : "";
+        console.log(`     ${r.name} | category: "${r.category}" | ${r.score_reason}${emailPart}`);
       });
     });
   }
