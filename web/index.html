@@ -394,16 +394,7 @@ const statusLine = document.getElementById('status-line');
 const timerEl = document.getElementById('timer');
 const countNum = document.getElementById('count-num');
 
-const DEMO_TARGETS = [
-  { code: "us", country: "United States" },
-  { code: "gb", country: "United Kingdom" },
-  { code: "au", country: "Australia" },
-  { code: "ca", country: "Canada" },
-  { code: "de", country: "Germany" },
-];
-
 let researching = false;
-let spawnTimeout = null;
 let sessionStart = null;
 let timerInterval = null;
 let leadCount = 0;
@@ -415,8 +406,7 @@ function fmtTime(ms) {
   return `${mm}:${ss} elapsed`;
 }
 
-function spawnBubble() {
-  const target = DEMO_TARGETS[Math.floor(Math.random() * DEMO_TARGETS.length)];
+function spawnBubble(lead) {
   const rect = canvas.getBoundingClientRect();
   const cx = rect.left + rect.width / 2;
   const cy = rect.top + rect.height / 2;
@@ -429,7 +419,8 @@ function spawnBubble() {
   el.className = 'bubble';
   el.style.left = `${x}px`;
   el.style.top = `${y}px`;
-  el.innerHTML = `<span class="flag fi fi-${target.code}"></span><span class="country">${target.country}</span>`;
+  el.title = lead.name || '';
+  el.innerHTML = `<span class="flag fi fi-${lead.flagCode}"></span><span class="country">${lead.countryName}</span>`;
   document.body.appendChild(el);
   setTimeout(() => el.remove(), 2800);
 
@@ -437,14 +428,12 @@ function spawnBubble() {
   countNum.textContent = leadCount;
 }
 
-function scheduleSpawn() {
-  if (!researching) return;
-  spawnBubble();
-  spawnTimeout = setTimeout(scheduleSpawn, 380 + Math.random() * 500);
-}
+let eventSource = null;
 
 function startResearch() {
   researching = true;
+  leadCount = 0;
+  countNum.textContent = '0';
   btn.classList.add('active');
   btn.firstChild.textContent = 'researching';
   statusLine.textContent = 'scanning public business listings across 5 regions...';
@@ -453,19 +442,47 @@ function startResearch() {
   rainDensity = 0.93;
   sessionStart = Date.now();
   timerInterval = setInterval(() => { timerEl.textContent = fmtTime(Date.now() - sessionStart); }, 250);
-  scheduleSpawn();
+
+  eventSource = new EventSource('/api/generate');
+
+  eventSource.addEventListener('lead', (e) => {
+    const lead = JSON.parse(e.data);
+    spawnBubble(lead);
+  });
+
+  eventSource.addEventListener('combo_error', (e) => {
+    const info = JSON.parse(e.data);
+    console.warn('Combo failed:', info);
+  });
+
+  eventSource.addEventListener('enriching', () => {
+    statusLine.textContent = 'enriching leads with email/description...';
+  });
+
+  eventSource.addEventListener('error', (e) => {
+    let msg = 'connection error — check the server terminal';
+    try { msg = JSON.parse(e.data).message; } catch {}
+    statusLine.textContent = msg;
+    stopResearch();
+  });
+
+  eventSource.addEventListener('done', (e) => {
+    const result = JSON.parse(e.data);
+    statusLine.textContent = `run complete — ${result.total} leads (${result.perfect} perfect, ${result.maybe} maybe) — saved to ${result.savedTo}`;
+    stopResearch(true);
+  });
 }
 
-function stopResearch() {
+function stopResearch(keepStatus) {
   researching = false;
   btn.classList.remove('active');
   btn.firstChild.textContent = 'generate leads';
-  statusLine.textContent = leadCount > 0 ? `run complete — ${leadCount} leads found` : '';
+  if (!keepStatus) statusLine.textContent = '';
   rotSpeed = reducedMotion ? 0.0004 : 0.0016;
   rainSpeed = 1;
   rainDensity = 0.975;
-  clearTimeout(spawnTimeout);
   clearInterval(timerInterval);
+  if (eventSource) { eventSource.close(); eventSource = null; }
 }
 
 btn.addEventListener('click', () => {
