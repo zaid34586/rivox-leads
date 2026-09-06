@@ -32,8 +32,46 @@ const DEFAULT_LOCATIONS = [
   "Berlin, Germany",
 ];
 
+import { readdirSync, readFileSync, statSync } from "fs";
+
 const app = express();
 app.use(express.static(path.join(__dirname, "..", "web")));
+
+app.get("/api/runs", (req, res) => {
+  const outDir = path.join(__dirname, "..", "output");
+  let files = [];
+  try {
+    files = readdirSync(outDir).filter((f) => f.endsWith(".json"));
+  } catch {
+    return res.json([]);
+  }
+
+  const runs = files
+    .map((f) => {
+      const fullPath = path.join(outDir, f);
+      let leads = [];
+      try {
+        leads = JSON.parse(readFileSync(fullPath, "utf-8"));
+        if (!Array.isArray(leads)) leads = [];
+      } catch {
+        leads = [];
+      }
+      const perfect = leads.filter((l) => l.tier === "Perfect").length;
+      const maybe = leads.filter((l) => l.tier === "Maybe").length;
+      const skip = leads.filter((l) => l.tier === "Skip").length;
+      return {
+        file: f,
+        timestamp: statSync(fullPath).mtime.getTime(),
+        total: leads.length,
+        perfect,
+        maybe,
+        skip,
+      };
+    })
+    .sort((a, b) => b.timestamp - a.timestamp);
+
+  res.json(runs);
+});
 
 app.get("/api/generate", async (req, res) => {
   res.writeHead(200, {

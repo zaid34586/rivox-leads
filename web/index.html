@@ -85,6 +85,69 @@
     text-shadow: 0 0 10px rgba(0,212,255,0.4);
   }
 
+  #menu-btn {
+    pointer-events: auto;
+    background: transparent;
+    border: 1px solid rgba(0,255,133,0.25);
+    border-radius: 4px;
+    width: 38px; height: 34px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 5px; cursor: pointer;
+    margin-left: 18px;
+    transition: border-color .2s ease, background .2s ease;
+  }
+  #menu-btn:hover { border-color: var(--signal); background: rgba(0,255,133,0.06); }
+  #menu-btn span {
+    display: block; width: 18px; height: 2px; background: var(--signal);
+    box-shadow: 0 0 6px rgba(0,255,133,0.6);
+    transition: transform .25s ease, opacity .25s ease;
+  }
+  #menu-btn.open span:nth-child(1) { transform: translateY(7px) rotate(45deg); }
+  #menu-btn.open span:nth-child(2) { opacity: 0; }
+  #menu-btn.open span:nth-child(3) { transform: translateY(-7px) rotate(-45deg); }
+
+  #side-panel {
+    position: fixed; top: 0; right: 0; bottom: 0; z-index: 20;
+    width: min(380px, 88vw);
+    background: rgba(3, 10, 6, 0.92);
+    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    border-left: 1px solid rgba(0,255,133,0.18);
+    transform: translateX(100%);
+    transition: transform .32s cubic-bezier(.2,.8,.3,1);
+    padding: 90px 26px 26px;
+    overflow-y: auto;
+  }
+  #side-panel.open { transform: translateX(0); }
+
+  #panel-scrim {
+    position: fixed; inset: 0; z-index: 19;
+    background: rgba(0,0,0,0.35);
+    opacity: 0; pointer-events: none;
+    transition: opacity .3s ease;
+  }
+  #panel-scrim.open { opacity: 1; pointer-events: auto; }
+
+  .panel-section { margin-bottom: 30px; }
+  .panel-section h3 {
+    color: var(--signal); font-size: 12px; letter-spacing: 0.08em;
+    margin: 0 0 12px; font-weight: 600;
+    text-shadow: 0 0 8px rgba(0,255,133,0.4);
+  }
+  .panel-empty {
+    color: var(--text-lo); font-size: 11.5px; line-height: 1.6;
+    border: 1px dashed rgba(92,138,114,0.35); border-radius: 8px; padding: 14px;
+  }
+  .run-item {
+    border: 1px solid rgba(0,212,255,0.18); border-radius: 8px;
+    padding: 12px 14px; margin-bottom: 10px;
+    color: var(--text-hi); font-size: 12px; cursor: pointer;
+    transition: border-color .2s ease, background .2s ease;
+  }
+  .run-item:hover { border-color: var(--data); background: rgba(0,212,255,0.06); }
+  .run-item .run-time { color: var(--text-lo); font-size: 10.5px; margin-bottom: 4px; }
+  .run-item .run-stats { color: var(--data); font-size: 11px; }
+  .panel-loading { color: var(--text-lo); font-size: 11.5px; }
+
   #globe-canvas { width: min(58vw, 600px); height: min(58vw, 600px); pointer-events: auto; }
 
   #controls {
@@ -206,8 +269,27 @@
 
 <header>
   <div class="brand"><b>RIVOX</b><span>lead intelligence</span></div>
-  <div class="clock" id="clock">00:00:00 UTC</div>
+  <div style="display:flex; align-items:center; pointer-events:auto;">
+    <div class="clock" id="clock">00:00:00 UTC</div>
+    <button id="menu-btn" aria-label="Open menu"><span></span><span></span><span></span></button>
+  </div>
 </header>
+
+<div id="panel-scrim"></div>
+<div id="side-panel">
+  <div class="panel-section">
+    <h3>Recent runs</h3>
+    <div id="runs-list" class="panel-loading">loading...</div>
+  </div>
+  <div class="panel-section">
+    <h3>Team</h3>
+    <div class="panel-empty">Team member access is not set up yet — coming in a later update.</div>
+  </div>
+  <div class="panel-section">
+    <h3>Admin</h3>
+    <div class="panel-empty">Admin connection is not set up yet — coming in a later update.</div>
+  </div>
+</div>
 
 <div id="scene-wrap">
   <canvas id="globe-canvas"></canvas>
@@ -489,6 +571,52 @@ btn.addEventListener('click', () => {
   if (researching) stopResearch();
   else startResearch();
 });
+
+/* ---------------------------------------------------------------
+   SIDE PANEL (hamburger menu)
+--------------------------------------------------------------- */
+const menuBtn = document.getElementById('menu-btn');
+const sidePanel = document.getElementById('side-panel');
+const panelScrim = document.getElementById('panel-scrim');
+const runsList = document.getElementById('runs-list');
+let runsLoaded = false;
+
+function openPanel() {
+  menuBtn.classList.add('open');
+  sidePanel.classList.add('open');
+  panelScrim.classList.add('open');
+  if (!runsLoaded) loadRuns();
+}
+function closePanel() {
+  menuBtn.classList.remove('open');
+  sidePanel.classList.remove('open');
+  panelScrim.classList.remove('open');
+}
+menuBtn.addEventListener('click', () => {
+  sidePanel.classList.contains('open') ? closePanel() : openPanel();
+});
+panelScrim.addEventListener('click', closePanel);
+
+async function loadRuns() {
+  try {
+    const res = await fetch('/api/runs');
+    const runs = await res.json();
+    runsLoaded = true;
+    if (runs.length === 0) {
+      runsList.innerHTML = '<div class="panel-empty">No runs yet — click "generate leads" to create the first one.</div>';
+      return;
+    }
+    runsList.innerHTML = runs.map(r => `
+      <div class="run-item">
+        <div class="run-time">${new Date(r.timestamp).toLocaleString()}</div>
+        <div>${r.total} leads</div>
+        <div class="run-stats">${r.perfect} perfect &middot; ${r.maybe} maybe &middot; ${r.skip} skip</div>
+      </div>
+    `).join('');
+  } catch (err) {
+    runsList.innerHTML = '<div class="panel-empty">Could not load runs — is the server running?</div>';
+  }
+}
 
 /* ---------------------------------------------------------------
    CLOCK
