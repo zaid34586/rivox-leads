@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>RIVOX — Lead Intelligence</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/7.5.0/css/flag-icons.min.css" />
+<style>
+  :root {
+    --void: #020403;
+    --void-2: #05130b;
+    --signal: #00ff85;
+    --signal-soft: #0a5c33;
+    --signal-faint: #0a2b1a;
+    --data: #00d4ff;
+    --data-soft: #094a5c;
+    --amber: #ffb020;
+    --text-hi: #eafff2;
+    --text-lo: #5c8a72;
+    --glass: rgba(6, 22, 14, 0.55);
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0; padding: 0;
+    width: 100%; height: 100%;
+    background: var(--void);
+    overflow: hidden;
+    font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+  }
+
+  #rain { position: fixed; inset: 0; z-index: 0; }
+
+  #scanlines {
+    position: fixed; inset: 0; z-index: 1; pointer-events: none;
+    background: repeating-linear-gradient(
+      to bottom,
+      rgba(0,0,0,0) 0px,
+      rgba(0,0,0,0) 2px,
+      rgba(0,20,10,0.18) 3px,
+      rgba(0,0,0,0) 4px
+    );
+    mix-blend-mode: overlay;
+    opacity: 0.5;
+  }
+
+  #atmosphere {
+    position: fixed; inset: 0; z-index: 1; pointer-events: none;
+    background:
+      radial-gradient(circle at 50% 42%, rgba(0,255,133,0.10) 0%, rgba(0,255,133,0.04) 22%, rgba(0,0,0,0) 45%),
+      radial-gradient(circle at 50% 42%, rgba(0,212,255,0.08) 0%, rgba(0,0,0,0) 38%);
+  }
+
+  #vignette {
+    position: fixed; inset: 0; z-index: 1; pointer-events: none;
+    background: radial-gradient(ellipse at 50% 45%, rgba(2,4,3,0) 0%, rgba(2,4,3,0.25) 50%, rgba(2,4,3,0.95) 100%);
+  }
+
+  #grid-corners {
+    position: fixed; inset: 0; z-index: 1; pointer-events: none; opacity: 0.35;
+  }
+
+  #scene-wrap {
+    position: fixed; inset: 0; z-index: 2;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    pointer-events: none;
+  }
+
+  header {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 5;
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 30px 44px; pointer-events: none;
+  }
+
+  .brand { color: var(--text-hi); font-size: 15px; letter-spacing: 0.1em; display: flex; align-items: baseline; gap: 10px; }
+  .brand b {
+    color: var(--signal); font-weight: 600;
+    text-shadow: 0 0 14px rgba(0,255,133,0.55);
+  }
+  .brand span { color: var(--text-lo); font-size: 11px; letter-spacing: 0.08em; }
+
+  .clock {
+    color: var(--data); font-size: 12px; letter-spacing: 0.1em;
+    text-shadow: 0 0 10px rgba(0,212,255,0.4);
+  }
+
+  #globe-canvas { width: min(58vw, 600px); height: min(58vw, 600px); pointer-events: auto; }
+
+  #controls {
+    position: relative; z-index: 6;
+    display: flex; flex-direction: column; align-items: center; gap: 16px;
+    margin-top: -4vh; pointer-events: auto;
+    background: var(--glass);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(0,255,133,0.12);
+    border-radius: 18px;
+    padding: 26px 44px 30px;
+  }
+
+  #status-line {
+    height: 18px; color: var(--data); font-size: 12.5px; letter-spacing: 0.04em;
+    text-shadow: 0 0 8px rgba(0,212,255,0.45);
+  }
+
+  #timer { color: var(--text-lo); font-size: 11.5px; letter-spacing: 0.1em; height: 16px; }
+
+  #gen-btn {
+    background: linear-gradient(180deg, rgba(0,255,133,0.06), rgba(0,255,133,0.01));
+    border: 1px solid var(--signal-soft);
+    color: var(--signal);
+    padding: 15px 40px;
+    font-family: inherit; font-size: 14px; letter-spacing: 0.06em;
+    cursor: pointer; border-radius: 3px;
+    position: relative;
+    transition: border-color .25s ease, box-shadow .25s ease, color .25s ease, background .25s ease;
+  }
+  #gen-btn:hover { border-color: var(--signal); box-shadow: 0 0 28px rgba(0,255,133,0.3); }
+  #gen-btn:focus-visible { outline: 2px solid var(--data); outline-offset: 3px; }
+  #gen-btn.active {
+    color: var(--void);
+    background: linear-gradient(180deg, var(--signal), #00cc6a);
+    border-color: var(--signal);
+    box-shadow: 0 0 46px rgba(0,255,133,0.6);
+  }
+  #gen-btn .cursor { display: inline-block; width: 8px; margin-left: 6px; animation: blink 1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  #count-readout {
+    position: fixed; bottom: 36px; left: 44px; z-index: 6;
+    color: var(--text-lo); font-size: 11.5px; letter-spacing: 0.08em; line-height: 1.7;
+    background: var(--glass); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+    border: 1px solid rgba(0,212,255,0.15); border-radius: 12px; padding: 14px 20px;
+  }
+  #count-readout b {
+    color: var(--data); font-size: 26px; display: block; font-weight: 600;
+    text-shadow: 0 0 14px rgba(0,212,255,0.5);
+  }
+
+  .bubble {
+    position: fixed; z-index: 4;
+    display: flex; align-items: center; gap: 9px;
+    padding: 8px 16px 8px 12px;
+    background: rgba(4, 16, 12, 0.72);
+    backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+    border: 1px solid rgba(0, 212, 255, 0.35);
+    box-shadow: 0 0 18px rgba(0,212,255,0.18);
+    border-radius: 999px;
+    color: var(--text-hi); font-size: 12px; white-space: nowrap;
+    pointer-events: none; opacity: 0;
+    transform: translate(-50%, -50%) scale(0.6);
+    animation: bubblePop 2.7s cubic-bezier(.2,.8,.3,1) forwards;
+  }
+  .bubble .flag {
+    width: 22px; height: 16px; border-radius: 3px;
+    box-shadow: 0 0 0 1px rgba(0,212,255,0.4), 0 0 10px rgba(0,212,255,0.35);
+    background-size: cover; flex-shrink: 0;
+  }
+  .bubble .country { color: var(--data); font-size: 10px; letter-spacing: 0.04em; }
+
+  @keyframes bubblePop {
+    0%   { opacity: 0; transform: translate(-50%, -50%) scale(0.35); }
+    14%  { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+    72%  { opacity: 1; }
+    100% { opacity: 0; transform: translate(-50%, calc(-50% - 78px)) scale(0.88); }
+  }
+
+  footer {
+    position: fixed; bottom: 30px; right: 44px; z-index: 6;
+    color: var(--text-lo); font-size: 10.5px; letter-spacing: 0.06em; opacity: 0.75;
+  }
+
+  @media (max-width: 720px) {
+    #globe-canvas { width: 82vw; height: 82vw; }
+    header { padding: 20px; }
+    #count-readout, footer { display: none; }
+    #controls { padding: 20px 28px 24px; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .bubble { animation-duration: 4s; }
+  }
+</style>
+</head>
+<body>
+
+<canvas id="rain"></canvas>
+<svg id="grid-corners" xmlns="http://www.w3.org/2000/svg" width="100%" height="100%">
+  <defs>
+    <pattern id="dotgrid" width="34" height="34" patternUnits="userSpaceOnUse">
+      <circle cx="1" cy="1" r="1" fill="#0a5c33" />
+    </pattern>
+    <linearGradient id="fadeTL" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="white" stop-opacity="1" />
+      <stop offset="100%" stop-color="white" stop-opacity="0" />
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="380" height="280" fill="url(#dotgrid)" mask="url(#maskTL)" />
+  <mask id="maskTL"><rect x="0" y="0" width="380" height="280" fill="url(#fadeTL)" /></mask>
+  <rect x="0" y="0" width="380" height="280" fill="url(#dotgrid)" style="mask:url(#maskTL)" />
+</svg>
+<div id="scanlines"></div>
+<div id="atmosphere"></div>
+<div id="vignette"></div>
+
+<header>
+  <div class="brand"><b>RIVOX</b><span>lead intelligence</span></div>
+  <div class="clock" id="clock">00:00:00 UTC</div>
+</header>
+
+<div id="scene-wrap">
+  <canvas id="globe-canvas"></canvas>
+  <div id="controls">
+    <div id="status-line"></div>
+    <button id="gen-btn">generate leads<span class="cursor">_</span></button>
+    <div id="timer"></div>
+  </div>
+</div>
+
+<div id="count-readout">
+  <b id="count-num">0</b>
+  leads discovered this session
+</div>
+
+<footer>public business data only &middot; no scraping of private platforms</footer>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+/* ---------------------------------------------------------------
+   MATRIX-STYLE RAIN BACKGROUND — mixed green/cyan for depth
+--------------------------------------------------------------- */
+const rainCanvas = document.getElementById('rain');
+const rctx = rainCanvas.getContext('2d');
+let rainCols = [];
+const glyphs = "アイウエオカキクケコサシスセソ0123456789ΞΣΦΨ01".split("");
+let rainSpeed = 1;
+let rainDensity = 0.975;
+
+function sizeRain() {
+  rainCanvas.width = window.innerWidth;
+  rainCanvas.height = window.innerHeight;
+  const cols = Math.floor(rainCanvas.width / 16);
+  rainCols = new Array(cols).fill(0).map(() => Math.random() * -100);
+}
+window.addEventListener('resize', sizeRain);
+sizeRain();
+
+function drawRain() {
+  rctx.fillStyle = `rgba(2,4,3,${1 - rainDensity})`;
+  rctx.fillRect(0, 0, rainCanvas.width, rainCanvas.height);
+  rctx.font = "14px monospace";
+
+  for (let i = 0; i < rainCols.length; i++) {
+    const x = i * 16;
+    const y = rainCols[i] * 18;
+    const g = glyphs[Math.floor(Math.random() * glyphs.length)];
+
+    const roll = Math.random();
+    if (roll > 0.94) rctx.fillStyle = "rgba(0,212,255,0.9)";       // occasional cyan glyph
+    else if (roll > 0.82) rctx.fillStyle = "rgba(220,255,235,0.95)"; // bright leading edge
+    else rctx.fillStyle = "rgba(0,255,133,0.55)";                   // base green
+
+    rctx.fillText(g, x, y);
+
+    rainCols[i] += 0.55 * rainSpeed;
+    if (y > rainCanvas.height && Math.random() > 0.975) rainCols[i] = 0;
+  }
+  requestAnimationFrame(drawRain);
+}
+drawRain();
+
+/* ---------------------------------------------------------------
+   3D DATA-GLOBE — layered glow, dual-tone dots
+--------------------------------------------------------------- */
+const canvas = document.getElementById('globe-canvas');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
+camera.position.z = 3.2;
+
+function resizeGlobe() {
+  const size = canvas.clientWidth || 500;
+  renderer.setSize(size, size, false);
+  camera.aspect = 1;
+  camera.updateProjectionMatrix();
+}
+
+const globeGroup = new THREE.Group();
+scene.add(globeGroup);
+
+const core = new THREE.Mesh(
+  new THREE.SphereGeometry(1, 48, 48),
+  new THREE.MeshBasicMaterial({ color: 0x030f09, transparent: true, opacity: 0.92 })
+);
+globeGroup.add(core);
+
+const wire = new THREE.Mesh(
+  new THREE.SphereGeometry(1.001, 24, 16),
+  new THREE.MeshBasicMaterial({ color: 0x0a5c33, wireframe: true, transparent: true, opacity: 0.3 })
+);
+globeGroup.add(wire);
+
+const CONTINENTS = [
+  { latMin: 15,  latMax: 70,  lonMin: -170, lonMax: -50 },
+  { latMin: -55, latMax: 12,  lonMin: -82,  lonMax: -34 },
+  { latMin: -35, latMax: 37,  lonMin: -18,  lonMax: 52 },
+  { latMin: 36,  latMax: 71,  lonMin: -10,  lonMax: 45 },
+  { latMin: 5,   latMax: 55,  lonMin: 45,   lonMax: 135 },
+  { latMin: -45, latMax: -10, lonMin: 112,  lonMax: 155 },
+];
+
+function latLonToVec3(lat, lon, radius) {
+  const phi = (90 - lat) * (Math.PI / 180);
+  const theta = (lon + 180) * (Math.PI / 180);
+  return new THREE.Vector3(
+    -radius * Math.sin(phi) * Math.cos(theta),
+    radius * Math.cos(phi),
+    radius * Math.sin(phi) * Math.sin(theta)
+  );
+}
+
+function makeDotTexture() {
+  const size = 64;
+  const c = document.createElement('canvas');
+  c.width = size; c.height = size;
+  const ctx2 = c.getContext('2d');
+  const grad = ctx2.createRadialGradient(size/2, size/2, 0, size/2, size/2, size/2);
+  grad.addColorStop(0, 'rgba(255,255,255,1)');
+  grad.addColorStop(0.4, 'rgba(255,255,255,0.7)');
+  grad.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx2.fillStyle = grad;
+  ctx2.fillRect(0, 0, size, size);
+  return new THREE.CanvasTexture(c);
+}
+const dotTexture = makeDotTexture();
+
+// Two dot layers: green (land mass density) + sparse cyan (major hubs) for two-tone depth
+function buildDots(count, radius, colorHex, size, opacity) {
+  const positions = [];
+  let attempts = 0;
+  while (positions.length < count * 3 && attempts < count * 20) {
+    attempts++;
+    const region = CONTINENTS[Math.floor(Math.random() * CONTINENTS.length)];
+    const lat = region.latMin + Math.random() * (region.latMax - region.latMin);
+    const lon = region.lonMin + Math.random() * (region.lonMax - region.lonMin);
+    const v = latLonToVec3(lat, lon, radius);
+    positions.push(v.x, v.y, v.z);
+  }
+  const geom = new THREE.BufferGeometry();
+  geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  const mat = new THREE.PointsMaterial({
+    color: colorHex, size, transparent: true, opacity,
+    map: dotTexture, depthWrite: false, blending: THREE.AdditiveBlending,
+  });
+  return new THREE.Points(geom, mat);
+}
+
+globeGroup.add(buildDots(2200, 1.012, 0x00ff85, 0.028, 0.9));
+globeGroup.add(buildDots(140, 1.02, 0x00d4ff, 0.05, 1));
+
+// Layered glow shells — green core glow + cyan outer halo for two-tone depth
+const glowInner = new THREE.Mesh(
+  new THREE.SphereGeometry(1.06, 32, 32),
+  new THREE.MeshBasicMaterial({ color: 0x00ff85, transparent: true, opacity: 0.05 })
+);
+globeGroup.add(glowInner);
+
+const glowOuter = new THREE.Mesh(
+  new THREE.SphereGeometry(1.16, 32, 32),
+  new THREE.MeshBasicMaterial({ color: 0x00d4ff, transparent: true, opacity: 0.025 })
+);
+globeGroup.add(glowOuter);
+
+let rotSpeed = 0.0016;
+const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+if (reducedMotion) rotSpeed = 0.0004;
+
+function animateGlobe() {
+  globeGroup.rotation.y += rotSpeed;
+  wire.rotation.y -= rotSpeed * 0.4;
+  renderer.render(scene, camera);
+  requestAnimationFrame(animateGlobe);
+}
+resizeGlobe();
+window.addEventListener('resize', resizeGlobe);
+animateGlobe();
+
+/* ---------------------------------------------------------------
+   LEAD BUBBLES + RESEARCH STATE
+--------------------------------------------------------------- */
+const btn = document.getElementById('gen-btn');
+const statusLine = document.getElementById('status-line');
+const timerEl = document.getElementById('timer');
+const countNum = document.getElementById('count-num');
+
+const DEMO_TARGETS = [
+  { code: "us", country: "United States" },
+  { code: "gb", country: "United Kingdom" },
+  { code: "au", country: "Australia" },
+  { code: "ca", country: "Canada" },
+  { code: "de", country: "Germany" },
+];
+
+let researching = false;
+let spawnTimeout = null;
+let sessionStart = null;
+let timerInterval = null;
+let leadCount = 0;
+
+function fmtTime(ms) {
+  const s = Math.floor(ms / 1000);
+  const mm = String(Math.floor(s / 60)).padStart(2, '0');
+  const ss = String(s % 60).padStart(2, '0');
+  return `${mm}:${ss} elapsed`;
+}
+
+function spawnBubble() {
+  const target = DEMO_TARGETS[Math.floor(Math.random() * DEMO_TARGETS.length)];
+  const rect = canvas.getBoundingClientRect();
+  const cx = rect.left + rect.width / 2;
+  const cy = rect.top + rect.height / 2;
+  const angle = Math.random() * Math.PI * 2;
+  const dist = (rect.width / 2) * (0.85 + Math.random() * 0.25);
+  const x = cx + Math.cos(angle) * dist;
+  const y = cy + Math.sin(angle) * dist * 0.7;
+
+  const el = document.createElement('div');
+  el.className = 'bubble';
+  el.style.left = `${x}px`;
+  el.style.top = `${y}px`;
+  el.innerHTML = `<span class="flag fi fi-${target.code}"></span><span class="country">${target.country}</span>`;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 2800);
+
+  leadCount++;
+  countNum.textContent = leadCount;
+}
+
+function scheduleSpawn() {
+  if (!researching) return;
+  spawnBubble();
+  spawnTimeout = setTimeout(scheduleSpawn, 380 + Math.random() * 500);
+}
+
+function startResearch() {
+  researching = true;
+  btn.classList.add('active');
+  btn.firstChild.textContent = 'researching';
+  statusLine.textContent = 'scanning public business listings across 5 regions...';
+  rotSpeed = reducedMotion ? 0.0012 : 0.014;
+  rainSpeed = 3.4;
+  rainDensity = 0.93;
+  sessionStart = Date.now();
+  timerInterval = setInterval(() => { timerEl.textContent = fmtTime(Date.now() - sessionStart); }, 250);
+  scheduleSpawn();
+}
+
+function stopResearch() {
+  researching = false;
+  btn.classList.remove('active');
+  btn.firstChild.textContent = 'generate leads';
+  statusLine.textContent = leadCount > 0 ? `run complete — ${leadCount} leads found` : '';
+  rotSpeed = reducedMotion ? 0.0004 : 0.0016;
+  rainSpeed = 1;
+  rainDensity = 0.975;
+  clearTimeout(spawnTimeout);
+  clearInterval(timerInterval);
+}
+
+btn.addEventListener('click', () => {
+  if (researching) stopResearch();
+  else startResearch();
+});
+
+/* ---------------------------------------------------------------
+   CLOCK
+--------------------------------------------------------------- */
+function tickClock() {
+  const d = new Date();
+  document.getElementById('clock').textContent = d.toISOString().slice(11, 19) + ' UTC';
+}
+tickClock();
+setInterval(tickClock, 1000);
+</script>
+</body>
+</html>
